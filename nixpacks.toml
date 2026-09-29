@@ -8,4 +8,4 @@ cmds = [
 ]
 
 [start]
-cmd = "gunicorn main:app --bind 0.0.0.0:$PORT --workers 2 --timeout 180 --worker-class sync"
+cmd = "playwright install chromium && gunicorn main:app --bind 0.0.0.0:$PORT --workers 2 --timeout 180 --worker-class sync"
