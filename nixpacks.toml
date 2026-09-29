@@ -1,13 +1,11 @@
 [phases.setup]
-nixPkgs = ["python311", "python311Packages.pip", "gcc", "chromium"]
+aptPkgs = ["chromium-browser"]
 
 [phases.install]
 cmds = [
-  "python3 -m ensurepip --upgrade",
-  "python3 -m pip install --upgrade pip",
-  "python3 -m pip install -r requirements.txt",
-  "python3 -m playwright install chromium"
+  "pip install -r requirements.txt",
+  "playwright install chromium"
 ]
 
 [start]
-cmd = "gunicorn app:app --bind 0.0.0.0:$PORT --workers 1 --threads 4 --timeout 120 --worker-class gthread"
+cmd = "gunicorn main:app --bind 0.0.0.0:$PORT --workers 2 --timeout 180 --worker-class sync"
