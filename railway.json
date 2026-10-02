@@ -1,5 +1,9 @@
 {
-  "$schema": "https://railway.app/railway.schema.json",
+  "$schema": "https://schema.railpack.com",
+  "provider": "python",
+  "packages": {
+    "python": "3.12"
+  },
   "deploy": {
     "startCommand": "python razorpay_api.py"
   }
