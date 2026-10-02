@@ -5,6 +5,6 @@
     "python": "3.12"
   },
   "deploy": {
-    "startCommand": "python razorpay_api.py"
+    "startCommand": "python main.py"
   }
 }
