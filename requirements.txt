@@ -1,3 +1,5 @@
-flask
-playwright==1.47.0
-gunicorn
+telethon
+aiohttp
+aiofiles
+requests
+psutil
