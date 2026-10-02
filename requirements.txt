@@ -1,5 +1,2 @@
-telethon
-aiohttp
-aiofiles
-requests
-psutil
+Flask==3.0.0
+playwright==1.40.0
