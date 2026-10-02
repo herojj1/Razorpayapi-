@@ -1,3 +1,2 @@
-Flask==3.0.0
-playwright==1.40.0
-greenlet==3.1.1
+Flask==3.1.0
+playwright==1.48.0
